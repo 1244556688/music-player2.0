@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glass Player — Ultimate Remaster</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0a0a;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #ffffff;
+            --text-muted: rgba(255, 255, 255, 0.6);
+            --primary: #c084fc; /* Purple */
+            --secondary: #2dd4bf; /* Teal */
+            --glow: 0 0 20px rgba(192, 132, 252, 0.3);
+        }
+
+        * { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; user-select: none; }
+        
+        body {
+            margin: 0;
+            height: 100vh;
+            background-color: var(--bg-dark);
+            font-family: 'Outfit', system-ui, sans-serif;
+            color: var(--text-main);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        /* === 動態背景 === */
+        .ambient-bg {
+            position: absolute;
+            width: 100%; height: 100%;
+            top: 0; left: 0;
+            background: 
+                radial-gradient(circle at 10% 20%, rgba(124, 92, 255, 0.2), transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(45, 212, 191, 0.15), transparent 40%);
+            z-index: -1;
+            animation: bgShift 10s ease-in-out infinite alternate;
+        }
+        @keyframes bgShift {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.1); }
+        }
+
+        /* === 拖放覆蓋層 === */
+        #dropZone {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
+            z-index: 100;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 24px; font-weight: 700; color: var(--secondary);
+            opacity: 0; pointer-events: none; transition: 0.3s;
+            border: 2px dashed var(--secondary);
+            margin: 20px; border-radius: 30px;
+        }
+        #dropZone.active { opacity: 1; pointer-events: all; }
+
+        /* === 主佈局 === */
+        .wrap {
+            display: grid;
+            grid-template-columns: 320px 1fr 280px;
+            width: 95%; max-width: 1200px; height: 80vh;
+            gap: 24px;
+            position: relative; z-index: 10;
+        }
+
+        .panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-radius: 32px;
+            padding: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            display: flex; flex-direction: column;
+            transition: transform 0.3s ease;
+        }
+
+        /* === 左側：播放清單 === */
+        .list-header {
+            display: flex; justify-content: space-between; align-items: flex-end;
+            margin-bottom: 20px; padding-bottom: 15px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+        .list-title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+        
+        .playlist-scroll {
+            flex: 1; overflow-y: auto;
+            padding-right: 5px; scrollbar-width: thin;
+        }
+        .playlist-scroll::-webkit-scrollbar { width: 4px; }
+        .playlist-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+        .track-item {
+            display: flex; align-items: center;
+            padding: 14px; border-radius: 16px;
+            margin-bottom: 8px; cursor: pointer;
+            transition: all 0.2s;
+            background: transparent;
+            border: 1px solid transparent;
+        }
+        .track-item:hover { background: rgba(255,255,255,0.05); }
+        .track-item.active {
+            background: linear-gradient(90deg, rgba(192, 132, 252, 0.15), transparent);
+            border-left: 3px solid var(--primary);
+        }
+        
+        .track-idx { font-size: 12px; color: var(--text-muted); width: 25px; }
+        .track-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+        
+        /* 按鈕組 */
+        .btn-group { margin-top: 20px; display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+        .btn-file {
+            background: var(--text-main); color: #000;
+            border-radius: 50px; padding: 12px;
+            text-align: center; cursor: pointer;
+            font-weight: 700; font-size: 14px;
+            transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-file:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(255,255,255,0.2); }
+        .btn-ghost {
+            background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);
+            color: var(--text-muted); width: 45px; border-radius: 50%;
+            cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-ghost:hover { background: rgba(255,50,50,0.1); color: #ff5c5c; border-color: #ff5c5c; }
+
+        /* === 中間：視覺化 === */
+        #center { 
+            position: relative; align-items: center; justify-content: center; 
+            text-align: center; overflow: hidden;
+        }
+        
+        #canvasWrap {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            position: absolute; inset: 0;
+        }
+        canvas { display: block; }
+        
+        .info-overlay {
+            position: relative; z-index: 5;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+        #currentTitle { 
+            font-size: 32px; font-weight: 700; margin-bottom: 8px; 
+            background: linear-gradient(135deg, #fff, #ccc);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        #currentTimeDisplay {
+            font-family: 'Outfit', monospace; font-size: 14px;
+            color: var(--secondary); background: rgba(45, 212, 191, 0.1);
+            padding: 6px 16px; border-radius: 20px; border: 1px solid rgba(45, 212, 191, 0.2);
+            display: inline-block;
+        }
+
+        /* === 右側：控制面板 === */
+        #right { justify-content: space-evenly; align-items: center; }
+
+        .control-row { display: flex; gap: 24px; align-items: center; }
+        .ctrl-btn {
+            background: none; border: none; color: var(--text-main);
+            cursor: pointer; transition: 0.2s; padding: 10px;
+            opacity: 0.7;
+        }
+        .ctrl-btn:hover { opacity: 1; transform: scale(1.1); color: var(--primary); }
+        
+        .ctrl-btn.big {
+            width: 72px; height: 72px;
+            background: linear-gradient(135deg, var(--secondary), var(--primary));
+            border-radius: 50%; color: #000;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 10px 30px rgba(124, 92, 255, 0.4);
+            opacity: 1;
+        }
+        .ctrl-btn.big:active { transform: scale(0.95); }
+
+        .mode-btn {
+            font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+            color: var(--text-muted); cursor: pointer;
+            padding: 8px 16px; border-radius: 20px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid transparent; transition: 0.3s;
+        }
+        .mode-btn:hover { border-color: var(--glass-border); color: #fff; }
+
+        /* 滑桿樣式 */
+        .slider-group { width: 100%; padding: 0 10px; margin-bottom: 10px; }
+        .label-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px; color: var(--text-muted); }
+        
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; height: 6px;
+            background: rgba(255,255,255,0.1); border-radius: 10px;
+            cursor: pointer; transition: 0.2s;
+        }
+        input[type=range]:hover { background: rgba(255,255,255,0.15); }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 18px; width: 18px;
+            border-radius: 50%; background: #fff;
+            box-shadow: 0 0 15px rgba(255,255,255,0.5);
+            margin-top: -6px; transition: 0.2s; transform: scale(0.8);
+        }
+        input[type=range]:hover::-webkit-slider-thumb { transform: scale(1); }
+
+        /* RWD */
+        @media(max-width: 900px){
+            .wrap { display: flex; flex-direction: column; height: auto; padding: 20px 0; }
+            body { overflow-y: auto; height: auto; padding-bottom: 40px; }
+            .panel { min-height: 200px; margin: 0 10px; }
+            #center { min-height: 300px; order: -1; } /* 把視覺放在最上面 */
+            #canvasWrap { position: relative; height: 250px; }
+            .list-header { margin-top: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="ambient-bg"></div>
+
+<div id="dropZone">
+    <span>放開以加入音樂</span>
+</div>
+
+<div class="wrap">
+    <div id="left" class="panel">
+        <div class="list-header">
+            <span class="list-title">Playlist</span>
+            <span style="font-size:12px;color:var(--text-muted)" id="trackCount">0 tracks</span>
+        </div>
+        <div class="playlist-scroll" id="playlistArea">
+            <div style="text-align:center; padding:60px 0; color:var(--text-muted); font-size:14px; line-height: 1.6;">
+                拖曳音樂檔案至此<br>或點擊下方按鈕
+            </div>
+        </div>
+        <div class="btn-group">
+            <label class="btn-file">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                Import Music
+                <input type="file" id="fileInput" accept="audio/*" multiple style="display:none">
+            </label>
+            <button class="btn-ghost" id="clearBtn" title="清空清單">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="center" class="panel">
+        <div id="canvasWrap">
+            <canvas id="visualizer"></canvas>
+        </div>
+        <div class="info-overlay">
+            <div id="currentTitle">Glass Player</div>
+            <div id="currentTimeDisplay">00:00 / 00:00</div>
+        </div>
+    </div>
+
+    <div id="right" class="panel">
+        <div class="mode-btn" id="modeBtn">循環: 全部</div>
+        
+        <div class="control-row">
+            <button class="ctrl-btn" id="prevBtn">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="3"></line></svg>
+            </button>
+            <button class="ctrl-btn big" id="playBtn">
+                <svg id="iconPlay" width="36" height="36" viewBox="0 0 24 24" fill="currentColor" style="margin-left:4px"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <svg id="iconPause" width="36" height="36" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            </button>
+            <button class="ctrl-btn" id="nextBtn">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="3"></line></svg>
+            </button>
+        </div>
+
+        <div class="slider-group">
+            <div class="label-row"><span>進度</span><span id="pctDisplay">0%</span></div>
+            <input type="range" id="progressSlider" value="0" min="0" max="100">
+        </div>
+
+        <div class="slider-group">
+            <div class="label-row"><span>音量</span><span id="volDisplay">80%</span></div>
+            <input type="range" id="volSlider" value="0.8" min="0" max="1" step="0.01">
+        </div>
+    </div>
+</div>
+
+<audio id="audioPlayer" crossorigin="anonymous"></audio>
+
+<script>
+    // === DOM 元素 ===
+    const els = {
+        file: document.getElementById('fileInput'),
+        playlist: document.getElementById('playlistArea'),
+        audio: document.getElementById('audioPlayer'),
+        title: document.getElementById('currentTitle'),
+        time: document.getElementById('currentTimeDisplay'),
+        playBtn: document.getElementById('playBtn'),
+        prevBtn: document.getElementById('prevBtn'),
+        nextBtn: document.getElementById('nextBtn'),
+        iconPlay: document.getElementById('iconPlay'),
+        iconPause: document.getElementById('iconPause'),
+        progress: document.getElementById('progressSlider'),
+        vol: document.getElementById('volSlider'),
+        mode: document.getElementById('modeBtn'),
+        clear: document.getElementById('clearBtn'),
+        count: document.getElementById('trackCount'),
+        dropZone: document.getElementById('dropZone'),
+        canvas: document.getElementById('visualizer'),
+        pct: document.getElementById('pctDisplay'),
+        volTxt: document.getElementById('volDisplay')
+    };
+
+    // === 狀態變數 ===
+    let state = {
+        tracks: [],
+        currentIdx: -1,
+        isPlaying: false,
+        mode: 'all', // 'all', 'one', 'shuffle'
+        audioCtx: null,
+        analyser: null,
+        source: null,
+        dataArray: null
+    };
+
+    // === 初始化 Visualizer Canvas ===
+    const ctx = els.canvas.getContext('2d');
+    let animationId;
+
+    function resizeCanvas() {
+        const parent = els.canvas.parentElement;
+        els.canvas.width = parent.clientWidth;
+        els.canvas.height = parent.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function initAudioContext() {
+        if(state.audioCtx) return;
+        try {
+            state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            state.analyser = state.audioCtx.createAnalyser();
+            state.analyser.fftSize = 256; // 頻率精度
+            
+            // 處理跨域問題 (如果是本地檔案則無所謂)
+            state.source = state.audioCtx.createMediaElementSource(els.audio);
+            state.source.connect(state.analyser);
+            state.analyser.connect(state.audioCtx.destination);
+            
+            state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
+            renderFrame();
+        } catch(e) {
+            console.log("Audio Init waiting for user gesture...");
+        }
+    }
+
+    function renderFrame() {
+        animationId = requestAnimationFrame(renderFrame);
+        if(!state.analyser) return;
+
+        state.analyser.getByteFrequencyData(state.dataArray);
+        
+        const w = els.canvas.width;
+        const h = els.canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const radius = Math.min(w, h) / 3.5;
+        const bars = 60;
+        const step = Math.floor(state.dataArray.length / bars);
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 繪製圓形頻譜
+        ctx.beginPath();
+        for (let i = 0; i < bars; i++) {
+            const val = state.dataArray[i * step];
+            const barHeight = (val / 255) * (radius * 0.8);
+            const angle = (Math.PI * 2 * i) / bars;
+            
+            // 計算起點與終點
+            const x1 = cx + Math.cos(angle) * radius;
+            const y1 = cy + Math.sin(angle) * radius;
+            const x2 = cx + Math.cos(angle) * (radius + barHeight + 5);
+            const y2 = cy + Math.sin(angle) * (radius + barHeight + 5);
+
+            // 顏色
+            ctx.strokeStyle = `hsl(${i * 4 + 250}, 100%, 70%)`;
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+        }
+        ctx.stroke();
+
+        // 內部發光圓
+        let bass = 0;
+        for(let i=0; i<10; i++) bass += state.dataArray[i];
+        bass = bass / 10; // 平均低音
+        
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius - 10 + (bass/20), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(192, 132, 252, ${0.1 + bass/400})`;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 + bass/500})`;
+        ctx.stroke();
+    }
+
+    // === 檔案處理 ===
+    function handleFiles(files) {
+        if(files.length === 0) return;
+        const newTracks = Array.from(files).map(f => ({
+            name: f.name.replace(/\.[^/.]+$/, ""),
+            url: URL.createObjectURL(f)
+        }));
+        
+        state.tracks = [...state.tracks, ...newTracks];
+        renderPlaylist();
+        
+        if(state.currentIdx === -1 && state.tracks.length > 0) {
+            loadTrack(0, false);
+        }
+    }
+
+    els.file.addEventListener('change', e => handleFiles(e.target.files));
+
+    // 拖放邏輯
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+        document.body.addEventListener(evt, preventDefaults, false);
+    });
+    function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+    document.body.addEventListener('dragenter', () => els.dropZone.classList.add('active'));
+    els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('active'));
+    els.dropZone.addEventListener('drop', (e) => {
+        els.dropZone.classList.remove('active');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    // === 播放列表 UI ===
+    function renderPlaylist() {
+        els.playlist.innerHTML = '';
+        els.count.textContent = `${state.tracks.length} tracks`;
+        
+        if(state.tracks.length === 0) {
+            els.playlist.innerHTML = '<div style="text-align:center; padding:60px 0; color:var(--text-muted); font-size:14px;">清單已空</div>';
+            return;
+        }
+
+        state.tracks.forEach((track, index) => {
+            const div = document.createElement('div');
+            div.className = `track-item ${index === state.currentIdx ? 'active' : ''}`;
+            div.innerHTML = `
+                <div class="track-idx">${index + 1}</div>
+                <div class="track-name">${track.name}</div>
+            `;
+            div.onclick = () => loadTrack(index, true);
+            els.playlist.appendChild(div);
+        });
+        
+        // 自動捲動到當前播放
+        if(state.currentIdx >= 0) {
+            const activeItem = els.playlist.children[state.currentIdx];
+            if(activeItem) activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    // === 核心播放控制 ===
+    function loadTrack(index, autoPlay = true) {
+        if(index < 0 || index >= state.tracks.length) return;
+        
+        state.currentIdx = index;
+        els.audio.src = state.tracks[index].url;
+        els.title.textContent = state.tracks[index].name;
+        
+        renderPlaylist();
+        
+        if(autoPlay) playAudio();
+        else updatePlayBtnUI(false);
+    }
+
+    function playAudio() {
+        initAudioContext();
+        if(state.audioCtx && state.audioCtx.state === 'suspended') {
+            state.audioCtx.resume();
+        }
+        els.audio.play()
+            .then(() => {
+                state.isPlaying = true;
+                updatePlayBtnUI(true);
+            })
+            .catch(e => console.warn("Auto-play blocked", e));
+    }
+
+    function pauseAudio() {
+        els.audio.pause();
+        state.isPlaying = false;
+        updatePlayBtnUI(false);
+    }
+
+    function togglePlay() {
+        if(state.tracks.length === 0) return;
+        if(els.audio.paused) playAudio();
+        else pauseAudio();
+    }
+
+    function updatePlayBtnUI(playing) {
+        els.iconPlay.style.display = playing ? 'none' : 'block';
+        els.iconPause.style.display = playing ? 'block' : 'none';
+        els.playBtn.style.boxShadow = playing 
+            ? '0 0 20px rgba(45, 212, 191, 0.6)' 
+            : '0 10px 30px rgba(124, 92, 255, 0.4)';
+    }
+
+    // === 上下一首 & 模式 ===
+    function nextTrack() {
+        if(state.tracks.length === 0) return;
+        
+        let next = state.currentIdx + 1;
+        
+        if(state.mode === 'shuffle') {
+            next = Math.floor(Math.random() * state.tracks.length);
+        } else if (state.mode === 'one') {
+            els.audio.currentTime = 0;
+            playAudio();
+            return;
+        } else {
+            if(next >= state.tracks.length) next = 0; // 循環全部
+        }
+        loadTrack(next, true);
+    }
+
+    function prevTrack() {
+        if(state.tracks.length === 0) return;
+        let prev = state.currentIdx - 1;
+        if(prev < 0) prev = state.tracks.length - 1;
+        loadTrack(prev, true);
+    }
+
+    els.playBtn.onclick = togglePlay;
+    els.nextBtn.onclick = nextTrack;
+    els.prevBtn.onclick = prevTrack;
+    els.audio.addEventListener('ended', nextTrack);
+
+    // === 進度條與顯示 ===
+    els.audio.addEventListener('timeupdate', () => {
+        if(!els.audio.duration) return;
+        const cur = els.audio.currentTime;
+        const dur = els.audio.duration;
+        const pct = (cur / dur) * 100;
+        
+        els.progress.value = pct;
+        els.time.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+        els.pct.textContent = Math.round(pct) + '%';
+        
+        // 滑桿背景色進度
+        els.progress.style.background = `linear-gradient(to right, var(--secondary) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`;
+    });
+
+    els.progress.addEventListener('input', (e) => {
+        if(!els.audio.duration) return;
+        const time = (e.target.value / 100) * els.audio.duration;
+        els.audio.currentTime = time;
+    });
+
+    function formatTime(s) {
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+    }
+
+    // === 音量控制 ===
+    els.vol.addEventListener('input', (e) => {
+        const val = e.target.value;
+        els.audio.volume = val;
+        els.volTxt.textContent = Math.round(val * 100) + '%';
+        els.vol.style.background = `linear-gradient(to right, var(--secondary) ${val*100}%, rgba(255,255,255,0.1) ${val*100}%)`;
+    });
+
+    // === 模式切換 ===
+    els.mode.onclick = () => {
+        const modes = ['all', 'one', 'shuffle'];
+        const texts = ['循環: 全部', '循環: 單曲', '模式: 隨機'];
+        let idx = modes.indexOf(state.mode);
+        idx = (idx + 1) % modes.length;
+        
+        state.mode = modes[idx];
+        els.mode.textContent = texts[idx];
+        
+        // 視覺回饋
+        els.mode.style.color = idx === 2 ? 'var(--primary)' : 'var(--text-muted)';
+        if(idx===1) els.mode.style.color = '#fff';
+    };
+
+    // === 清除清單 ===
+    els.clear.onclick = () => {
+        pauseAudio();
+        els.audio.src = '';
+        state.tracks = [];
+        state.currentIdx = -1;
+        els.title.textContent = 'Glass Player';
+        els.time.textContent = '00:00 / 00:00';
+        els.pct.textContent = '0%';
+        els.progress.value = 0;
+        els.progress.style.background = 'rgba(255,255,255,0.1)';
+        
+        // 重置 Canvas
+        ctx.clearRect(0,0,els.canvas.width, els.canvas.height);
+        
+        renderPlaylist();
+    };
+
+</script>
+</body>
+</html>
